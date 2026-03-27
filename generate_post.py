@@ -83,7 +83,7 @@ def generate_notebook_via_claude(conversation_text: str) -> dict:
 {conversation_text}
 ---
 
-write a technical blog post as a jupyter notebook json. return ONLY valid jupyter notebook json, nothing else. start with {{ "nbformat": 4 ..."""
+write a technical blog post as a jupyter notebook json object. do NOT wrap in markdown code fences. return ONLY the raw json, one line per cell source array (escape newlines as \\n in json strings)."""
 
     log.info(f"Calling Claude {MODEL}...")
     message = client.messages.create(
@@ -100,7 +100,11 @@ write a technical blog post as a jupyter notebook json. return ONLY valid jupyte
         lines = raw.split("\n")
         raw = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
 
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        log.error(f"JSON parse failed: {e}")
+        raise
 
 def make_fallback_notebook(title: str, conversation_text: str) -> dict:
     """Simple fallback notebook when Claude is unavailable."""
@@ -158,14 +162,33 @@ def save_notebook(notebook: dict, path: Path):
     log.info(f"Notebook saved: {path}")
 
 def convert_to_markdown(nb_path: Path, output_dir: Path) -> Path:
+    """Convert Jupyter notebook to markdown by extracting markdown cells."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["jupyter", "nbconvert", "--to", "markdown", str(nb_path), "--output-dir", str(output_dir)],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"nbconvert failed:\n{result.stderr}")
     md_path = output_dir / (nb_path.stem + ".md")
+    
+    # Read notebook and extract markdown
+    with open(nb_path, "r") as f:
+        nb = json.load(f)
+    
+    lines = []
+    for cell in nb.get("cells", []):
+        if cell.get("cell_type") == "markdown":
+            src = cell.get("source", [])
+            if isinstance(src, list):
+                lines.extend(src)
+            else:
+                lines.append(src)
+            lines.append("\n")
+        elif cell.get("cell_type") == "code":
+            lines.append("\n```python\n")
+            src = cell.get("source", [])
+            if isinstance(src, list):
+                lines.extend(src)
+            else:
+                lines.append(src)
+            lines.append("\n```\n")
+    
+    md_path.write_text("".join(lines))
     log.info(f"Markdown generated: {md_path}")
     return md_path
 
