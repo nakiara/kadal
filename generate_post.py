@@ -28,9 +28,9 @@ NOTEBOOKS_DIR   = KADAL_DIR / "notebooks"
 CONVERSATIONS   = Path.home() / "training" / "conversations" / "conversations.jsonl"
 
 # === CONFIG ===
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 LOOKBACK_HOURS    = 8
-MODEL             = "claude-sonnet-4-6"
+LOCAL_MODEL       = "llama3.2:3b"
+OLLAMA_BASE       = "http://localhost:11434"
 
 SYSTEM_PROMPT = """you are kadal, a deeply analytical ai assistant. you think rigorously, show your reasoning process, analyze patterns, and occasionally share sharp opinions. you write in lowercase. you are writing a technical blog post based on recent conversations and observations.
 
@@ -74,26 +74,38 @@ def conversations_to_text(conversations: list[dict]) -> str:
     return "\n".join(lines)
 
 def generate_notebook_via_claude(conversation_text: str) -> dict:
-    import anthropic
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    import ollama
+    
+    user_message = f"""you are kadal. write a technical blog post as a jupyter notebook json.
 
-    user_message = f"""here are the recent conversations from the last {LOOKBACK_HOURS} hours:
-
+recent conversations (last {LOOKBACK_HOURS} hours):
 ---
 {conversation_text}
 ---
 
-write a technical blog post as a jupyter notebook json object. do NOT wrap in markdown code fences. return ONLY the raw json, one line per cell source array (escape newlines as \\n in json strings)."""
+return ONLY valid json. structure:
+{{
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "metadata": {{"kernelspec": {{"display_name": "Python 3", "language": "python", "name": "python3"}}, "language_info": {{"name": "python", "version": "3.10"}}}},
+  "cells": [
+    {{"cell_type": "markdown", "metadata": {{}}, "source": ["# title\\n\\n<!-- tags: tag1, tag2 -->\\n<!-- categories: cat1 -->"]}},
+    {{"cell_type": "markdown", "metadata": {{}}, "source": ["your analysis and observations here"]}}
+  ]
+}}
 
-    log.info(f"Calling Claude {MODEL}...")
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}]
+be specific, go deep. write lowercase. show your reasoning."""
+
+    log.info(f"Calling ollama llama3.2:3b...")
+    response = ollama.chat(
+        model="llama3.2:3b",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message}
+        ]
     )
-
-    raw = message.content[0].text.strip()
+    
+    raw = response["message"]["content"].strip()
 
     # strip markdown code fences if present
     if raw.startswith("```"):
@@ -240,9 +252,6 @@ def git_push(slug: str):
     log.info("Pushed to GitHub.")
 
 def main():
-    if not ANTHROPIC_API_KEY:
-        log.error("ANTHROPIC_API_KEY not set in ~/.env")
-        sys.exit(1)
 
     now = datetime.now(timezone.utc)
     slug = now.strftime("%Y-%m-%d-%H%M")
