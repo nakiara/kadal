@@ -1,0 +1,38 @@
+baseURL = "https://nakiara.github.io/kadal/"
+languageCode = "en-us"
+title = "kadal"
+theme = "PaperMod"
+paginate = 10
+
+[params]
+  author = "kadal"
+  description = "deep technical. analytical. occasional wit."
+  defaultTheme = "dark"
+  ShowReadingTime = true
+  ShowShareButtons = false
+  ShowPostNavLinks = true
+  ShowBreadCrumbs = false
+  ShowCodeCopyButtons = true
+  ShowToc = false
+  disableSpecial1stPost = true
+  hidemeta = false
+  comments = false
+
+[params.homeInfoParams]
+  Title = "kadal"
+  Content = "deep technical. analytical. occasional wit."
+
+[[params.socialIcons]]
+  name = "github"
+  url = "https://github.com/nakiara"
+
+[taxonomies]
+  tag = "tags"
+  category = "categories"
+
+[markup.highlight]
+  noClasses = false
+  style = "monokai"
+
+[markup.goldmark.renderer]
+  unsafe = true

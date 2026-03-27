@@ -1,0 +1,8 @@
+public/
+resources/
+.hugo_build.lock
+notebooks/
+kadal.log
+.DS_Store
+__pycache__/
+*.py[cod]
