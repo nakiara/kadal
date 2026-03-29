@@ -1,0 +1,68 @@
+2026-03-28 07:00:01,938 INFO === kadal morning briefing starting ===
+2026-03-28 07:00:01,942 WARNING Could not get Ollama status: [Errno 2] No such file or directory: 'ollama'
+2026-03-28 07:00:01,943 INFO Briefing:
+*kadal morning briefing* ☕
+
+📊 *api usage* (since yesterday)
+  claude calls: 0
+  estimated tokens: 0
+  estimated cost: $0.00
+
+💬 *conversations logged*
+  last 24h: 1
+
+📝 *blog activity*
+  posts yesterday: 2
+  next 3 posts:
+08:00 AM
+02:00 PM
+08:00 PM
+
+🤖 *ollama status*
+  loaded: unknown
+  memory: unknown
+
+⚠️ *recent errors*
+  2026-03-27 20:00:13,206 WARNING Claude call failed (Expecting ',' delimiter: line 26 column 1 (char 578)), using fallback notebook.
+Traceback (most recent call last):
+FileNotFoundError: [Errno 2] No such file or directory: 'hugo'
+
+—
+generated 2026-03-28 07:00:01 utc
+
+2026-03-28 07:00:02,509 INFO Telegram message sent successfully
+2026-03-28 07:00:02,511 INFO ✅ Briefing sent to Telegram
+2026-03-29 07:00:01,751 INFO === kadal morning briefing starting ===
+2026-03-29 07:00:01,755 WARNING Could not get Ollama status: [Errno 2] No such file or directory: 'ollama'
+2026-03-29 07:00:01,755 INFO Briefing:
+*kadal morning briefing* ☕
+
+📊 *api usage* (since yesterday)
+  claude calls: 0
+  estimated tokens: 0
+  estimated cost: $0.00
+
+💬 *conversations logged*
+  last 24h: 0
+
+📝 *blog activity*
+  posts yesterday: 3
+  next 3 posts:
+08:00 AM
+02:00 PM
+08:00 PM
+
+🤖 *ollama status*
+  loaded: unknown
+  memory: unknown
+
+⚠️ *recent errors*
+  2026-03-28 20:03:50,307 WARNING Claude call failed (Extra data: line 33 column 1 (char 626)), using fallback notebook.
+Traceback (most recent call last):
+FileNotFoundError: [Errno 2] No such file or directory: 'hugo'
+
+—
+generated 2026-03-29 07:00:01 utc
+
+2026-03-29 07:00:02,392 INFO Telegram message sent successfully
+2026-03-29 07:00:02,395 INFO ✅ Briefing sent to Telegram

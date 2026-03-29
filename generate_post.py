@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 generate_post.py — autonomous blog post generator for kadal
-reads recent conversations → asks Claude Sonnet → saves as Jupyter notebook
+reads recent conversations → asks Ollama → saves as Jupyter notebook
 → converts to markdown → Hugo build → git push
 
 runs 3x daily via launchd (8am, 2pm, 8pm)
@@ -12,6 +12,9 @@ import os
 import sys
 import subprocess
 import logging
+import shutil
+import re
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
@@ -31,6 +34,10 @@ CONVERSATIONS   = Path.home() / "training" / "conversations" / "conversations.js
 LOOKBACK_HOURS    = 8
 LOCAL_MODEL       = "llama3.2:3b"
 OLLAMA_BASE       = "http://localhost:11434"
+API_DELAY         = 2.0  # seconds between API calls
+
+# Find hugo dynamically
+HUGO_PATH = shutil.which("hugo") or "/opt/homebrew/bin/hugo"
 
 SYSTEM_PROMPT = """you are kadal, a deeply analytical ai assistant. you think rigorously, show your reasoning process, analyze patterns, and occasionally share sharp opinions. you write in lowercase. you are writing a technical blog post based on recent conversations and observations.
 
@@ -73,32 +80,74 @@ def conversations_to_text(conversations: list[dict]) -> str:
         lines.append("")
     return "\n".join(lines)
 
-def generate_notebook_via_claude(conversation_text: str) -> dict:
+def repair_json(raw: str) -> str:
+    """Repair common JSON formatting issues from Ollama output."""
+    # strip markdown code fences
+    raw = re.sub(r"^```json\n?", "", raw)
+    raw = re.sub(r"^```\n?", "", raw)
+    raw = re.sub(r"\n?```$", "", raw)
+    
+    # strip everything before first { and after last }
+    first_brace = raw.find("{")
+    last_brace = raw.rfind("}")
+    if first_brace != -1 and last_brace != -1 and first_brace < last_brace:
+        raw = raw[first_brace:last_brace + 1]
+    
+    # fix unescaped newlines in strings
+    def fix_string(match):
+        s = match.group(1)
+        s = s.replace("\n", "\\n").replace("\r", "\\r")
+        return f'"{s}"'
+    
+    raw = re.sub(r'"([^"\\]*(?:\\.[^"\\]*)*)"', fix_string, raw)
+    
+    # fix trailing commas
+    raw = re.sub(r',(\s*[}\]])', r'\1', raw)
+    
+    # fix missing commas
+    raw = re.sub(r'(\})\s*(\{)', r'\1,\2', raw)
+    raw = re.sub(r'(\})\s*(\[)', r'\1,\2', raw)
+    raw = re.sub(r'(\])\s*(\{)', r'\1,\2', raw)
+    raw = re.sub(r'(\])\s*(\[)', r'\1,\2', raw)
+    
+    return raw
+
+def generate_notebook_via_ollama(conversation_text: str, attempt: int = 1) -> dict:
     import ollama
     
-    user_message = f"""you are kadal. write a technical blog post as a jupyter notebook json.
+    # Adjust prompt complexity based on attempt
+    if attempt == 1:
+        user_message = f"""you are kadal. write a technical blog post as a jupyter notebook json.
 
 recent conversations (last {LOOKBACK_HOURS} hours):
 ---
 {conversation_text}
 ---
 
-return ONLY valid json. structure:
+return ONLY valid json. no markdown fences. no extra text. structure:
 {{
   "nbformat": 4,
   "nbformat_minor": 5,
-  "metadata": {{"kernelspec": {{"display_name": "Python 3", "language": "python", "name": "python3"}}, "language_info": {{"name": "python", "version": "3.10"}}}},
+  "metadata": {{"kernelspec": {{"display_name": "Python 3", "language": "python", "name": "python3"}}}},
   "cells": [
     {{"cell_type": "markdown", "metadata": {{}}, "source": ["# title\\n\\n<!-- tags: tag1, tag2 -->\\n<!-- categories: cat1 -->"]}},
-    {{"cell_type": "markdown", "metadata": {{}}, "source": ["your analysis and observations here"]}}
+    {{"cell_type": "markdown", "metadata": {{}}, "source": ["analysis here"]}}
   ]
-}}
+}}"""
+    else:
+        # Simpler prompt for retries
+        user_message = f"""write a simple jupyter notebook json. just:
+- title in markdown
+- one paragraph of analysis
+no markdown fences. valid json only.
 
-be specific, go deep. write lowercase. show your reasoning."""
-
-    log.info(f"Calling ollama llama3.2:3b...")
+topic: {conversation_text[:200] if conversation_text else 'general observations'}"""
+    
+    log.info(f"Calling ollama llama3.2:3b (attempt {attempt}/3)...")
+    time.sleep(API_DELAY)
+    
     response = ollama.chat(
-        model="llama3.2:3b",
+        model=LOCAL_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_message}
@@ -106,20 +155,23 @@ be specific, go deep. write lowercase. show your reasoning."""
     )
     
     raw = response["message"]["content"].strip()
-
-    # strip markdown code fences if present
-    if raw.startswith("```"):
-        lines = raw.split("\n")
-        raw = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-
+    
+    # repair JSON
     try:
-        return json.loads(raw)
+        repaired = repair_json(raw)
+        parsed = json.loads(repaired)
+        log.info(f"✅ JSON parsed successfully on attempt {attempt}")
+        return parsed
     except json.JSONDecodeError as e:
-        log.error(f"JSON parse failed: {e}")
-        raise
+        if attempt < 3:
+            log.warning(f"JSON parse attempt {attempt} failed: {e}. Retrying...")
+            return generate_notebook_via_ollama(conversation_text, attempt + 1)
+        else:
+            log.error(f"JSON parse failed after 3 attempts: {e}")
+            raise
 
 def make_fallback_notebook(title: str, conversation_text: str) -> dict:
-    """Simple fallback notebook when Claude is unavailable."""
+    """Simple fallback notebook when Ollama fails."""
     return {
         "nbformat": 4,
         "nbformat_minor": 5,
@@ -143,7 +195,6 @@ def make_fallback_notebook(title: str, conversation_text: str) -> dict:
 
 def extract_tags_categories(notebook: dict) -> tuple[list, list]:
     """Pull tags/categories from HTML comments in markdown cells."""
-    import re
     tags, cats = ["observations"], ["daily"]
     for cell in notebook.get("cells", []):
         if cell.get("cell_type") == "markdown":
@@ -158,7 +209,6 @@ def extract_tags_categories(notebook: dict) -> tuple[list, list]:
 
 def extract_title(notebook: dict) -> str:
     """Pull title from first markdown cell h1."""
-    import re
     for cell in notebook.get("cells", []):
         if cell.get("cell_type") == "markdown":
             src = "".join(cell.get("source", []))
@@ -218,8 +268,7 @@ showToc: false
 
 """
     content = md_path.read_text()
-    # strip the h1 (already in frontmatter as title)
-    import re
+    # strip the h1
     content = re.sub(r"^#\s+.+\n", "", content, count=1)
     # strip tag/category comments
     content = re.sub(r"<!-- (tags|categories): [^>]+ -->\n?", "", content)
@@ -227,9 +276,10 @@ showToc: false
 
 def hugo_build():
     result = subprocess.run(
-        ["hugo", "--minify"],
+        [HUGO_PATH, "--minify"],
         cwd=str(KADAL_DIR),
-        capture_output=True, text=True
+        capture_output=True,
+        text=True
     )
     if result.returncode != 0:
         raise RuntimeError(f"hugo build failed:\n{result.stderr}")
@@ -244,7 +294,6 @@ def git_push(slug: str):
     for cmd in cmds:
         result = subprocess.run(cmd, cwd=str(KADAL_DIR), capture_output=True, text=True)
         if result.returncode != 0:
-            # empty commit is fine
             if "nothing to commit" in result.stdout + result.stderr:
                 log.info("Nothing new to commit.")
                 return
@@ -252,7 +301,6 @@ def git_push(slug: str):
     log.info("Pushed to GitHub.")
 
 def main():
-
     now = datetime.now(timezone.utc)
     slug = now.strftime("%Y-%m-%d-%H%M")
     nb_path = NOTEBOOKS_DIR / f"{slug}.ipynb"
@@ -270,11 +318,11 @@ def main():
     else:
         conversation_text = conversations_to_text(convos)
 
-    # Generate notebook via Claude
+    # Generate notebook via Ollama
     try:
-        notebook = generate_notebook_via_claude(conversation_text)
+        notebook = generate_notebook_via_ollama(conversation_text)
     except Exception as e:
-        log.warning(f"Claude call failed ({e}), using fallback notebook.")
+        log.warning(f"Ollama call failed ({e}), using fallback notebook.")
         notebook = make_fallback_notebook(slug, conversation_text)
 
     # Extract metadata

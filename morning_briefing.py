@@ -9,12 +9,15 @@ import os
 import sys
 import logging
 import subprocess
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 import requests
 
 load_dotenv(os.path.expanduser("~/.env"))
+
+API_DELAY = 2.0  # seconds between API calls
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -151,6 +154,8 @@ def send_telegram_message(text: str):
     if not BOT_TOKEN or not USER_ID:
         log.error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_USER_ID in ~/.env")
         return False
+    
+    time.sleep(API_DELAY)  # rate limit
     
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
